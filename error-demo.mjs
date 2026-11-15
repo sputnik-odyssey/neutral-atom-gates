@@ -1,6 +1,9 @@
-import { simulateGate, freeEvolution, singlePulse } from './noise.mjs?v=decay-detuning-1';
+import { simulateGate, freeEvolution, singlePulse } from './branching.mjs?v=branching-1';
 const $ = selector => document.querySelector(selector);
 const controls = ['#noise-pulse', '#noise-dephasing', '#noise-blockade', '#noise-infinite', '#noise-decay', '#noise-detuning'];
+let branchWeights = [0, 1000, 0];
+let scanId = 0, latestScan = null;
+const worker = new Worker('./noise-worker.mjs?v=branching-1', { type: 'module' });
 const percent = x => `${(100 * x).toFixed(2)}%`;
 const presets = {
   ideal: [0, 0, 10, true, 0, 0], pulse: [8, 0, 10, true, 0, 0],
@@ -18,6 +21,7 @@ const scans = {
 function parameters() {
   return {
     epsilon: Number($('#noise-pulse').value) / 100,
+    branch0: branchWeights[0] / 1000, branch1: branchWeights[1] / 1000, branchLeak: branchWeights[2] / 1000,
     dephasing: Number($('#noise-dephasing').value),
     decay: Number($('#noise-decay').value),
     detuning: Number($('#noise-detuning').value),
@@ -40,13 +44,8 @@ function frame(config) {
   return { markup, x, y };
 }
 function path(points, x, y, key) { return points.map((p, i) => `${i ? 'L' : 'M'}${x(p.value).toFixed(2)},${y(p[key]).toFixed(2)}`).join(' '); }
-function renderSweep(params, current) {
-  const key = $('#noise-scan').value, config = scans[key];
-  const count = key === 'blockadeRatio' ? 161 : 61;
-  const points = Array.from({ length: count }, (_, i) => {
-    const value = config.min + (config.max - config.min) * i / (count - 1);
-    return { value, ...simulateGate({ ...params, [key]: value }, { record: false }) };
-  });
+function renderSweep(params, current, points) {
+  const key = latestScan.key, config = scans[key], count = points.length;
   const plot = frame(config), marker = params[key];
   let markup = plot.markup;
   markup += `<path class="chart-line line-state" d="${path(points, plot.x, plot.y, 'stateFidelity')}"/><path class="chart-line line-gate" d="${path(points, plot.x, plot.y, 'averageFidelity')}"/>`;
@@ -67,7 +66,7 @@ function renderTrajectory(result) {
   markup += `<path class="chart-line line-gate" d="${path(points, plot.x, plot.y, 'rydberg')}"/><path class="chart-line line-double" d="${path(points, plot.x, plot.y, 'double')}"/>`;
   $('#noise-population-chart').innerHTML = markup;
   $('#noise-max-double').textContent = percent(result.maxDouble);
-  $('#noise-final-rydberg').textContent = percent(result.leakage);
+  $('#noise-final-rydberg').textContent = percent(result.trajectory.at(-1).rydberg);
 }
 function renderFreeEvolution(params) {
   const plot = frame({ min: 0, max: 1, label: '自由演化时间 t/t_g', format: x => x.toFixed(2),
@@ -82,6 +81,9 @@ function renderFreeEvolution(params) {
   $('#noise-free-population').textContent = percent(last.excited);
   $('#noise-free-coherence').textContent = last.coherence.toFixed(4);
   $('#noise-free-phase').textContent = `${(last.phase * 180 / Math.PI).toFixed(1)}°`;
+  $('#noise-free-zero').textContent = percent(last.zero);
+  $('#noise-free-one').textContent = percent(last.ground);
+  $('#noise-free-loss').textContent = percent(last.loss);
   $('#noise-free-damping').textContent = (params.dephasing + params.decay / 2).toFixed(3);
   const pulse = singlePulse(params);
   $('#noise-pi-population').textContent = percent(pulse.population);
@@ -101,7 +103,7 @@ function update() {
   const descriptions = [];
   if (params.epsilon) descriptions.push(`脉冲面积偏差为 ${(100 * params.epsilon).toFixed(1)}%，实际转角偏离设计值`);
   if (params.dephasing) descriptions.push(`纯退相干在整个脉冲序列中作用，g = ${params.dephasing.toFixed(2)}`);
-  if (params.decay) descriptions.push(`有效闭合衰变 |r⟩ → |1⟩ 的强度为 a = ${params.decay.toFixed(2)}`);
+  if (params.decay) descriptions.push(`总衰变强度 a = ${params.decay.toFixed(2)}；回到 |0⟩、|1⟩ 和泄漏到 |ℓ⟩ 的比例分别为 ${branchWeights.map(x => (x/10).toFixed(1)+'%').join('、')}`);
   if (params.detuning) descriptions.push(`两原子具有相同且固定的激光失谐 δ = ${params.detuning.toFixed(2)}，在旋转坐标系中改变演化相位和旋转轴`);
   if (Number.isFinite(params.blockadeRatio)) descriptions.push(params.blockadeRatio === 0 ? 'b = 0 时不存在阻塞，理想脉冲经相位补偿后得到恒等操作，而不是 CZ' : `阻塞强度 b = ${params.blockadeRatio.toFixed(1)}，存在非共振耦合及附加相位`);
   $('#noise-summary').textContent = descriptions.length ? descriptions.join('；') + '。数值结果包含这些效应的联合演化，不采用误差概率直接相加的近似。' : '在无脉冲误差、无纯退相干、无自发衰变、无激光失谐和完全阻塞的极限下，实际操作与理想 CZ 门一致，平均门保真度为 100%。';
@@ -111,8 +113,42 @@ function update() {
       Math.abs(a - params.decay) < 1e-9 && Math.abs(delta - params.detuning) < 1e-9 && (infinite ? !Number.isFinite(params.blockadeRatio) : params.blockadeRatio === b);
     button.classList.toggle('selected', active); button.setAttribute('aria-pressed', String(active));
   }
-  renderTrajectory(result); renderSweep(params, result); renderFreeEvolution(params);
+  $('#noise-branch-loss').textContent = percent(result.branchLeakage);
+  $('#noise-logical-flip').textContent = percent(result.logicalFlip);
+  $('#noise-process-fidelity').textContent = percent(result.processFidelity);
+  [0,1,2].forEach(i => {
+    $('#noise-branch-'+i).value = branchWeights[i]/10;
+    $('#noise-branch-'+i+'-value').textContent = (branchWeights[i]/10).toFixed(1)+'%';
+  });
+  for (const b of document.querySelectorAll('[data-branch-preset]')) { const active = branchPresets[b.dataset.branchPreset].every((x,i)=>x===branchWeights[i]); b.classList.toggle('selected',active); b.setAttribute('aria-pressed',String(active)); }
+  renderTrajectory(result); renderFreeEvolution(params);
+  const key = $('#noise-scan').value, config = scans[key];
+  latestScan = { id: ++scanId, params, current: result, key };
+  $('#noise-scan-status').textContent = '正在计算参数扫描与分支对照…';
+  $('#noise-branch-status').textContent = params.decay ? '以下对照固定总衰变率和其他控制参数，只改变分支比例。' : '当前 Γ = 0，分支比例不影响结果。可先选择“仅自发衰变”再比较。';
+  worker.postMessage({ id: scanId, params, key, min: config.min, max: config.max, count: key === 'blockadeRatio' ? 161 : 61 });
 }
+worker.onmessage = ({ data }) => {
+  if (!latestScan || data.id !== latestScan.id) return;
+  if (data.error) { $('#noise-scan-status').textContent = '计算失败：'+data.error; return; }
+  renderSweep(latestScan.params, latestScan.current, data.points);
+  const labels = ['全部回到 |0⟩','全部回到 |1⟩','全部进入 |ℓ⟩','当前分支比例'];
+  $('#noise-branch-table').innerHTML = data.compared.map((r,i) => `<tr><th>${labels[i]}</th><td>${percent(r.averageFidelity)}</td><td>${percent(r.branchLeakage)}</td><td>${percent(r.residualRydberg)}</td><td>${percent(r.logicalFlip)}</td></tr>`).join('');
+  $('#noise-scan-status').textContent = '扫描与分支对照已更新。';
+};
+worker.onerror = () => { $('#noise-scan-status').textContent = '参数扫描加载失败，请刷新页面重试。'; };
+for (const slider of document.querySelectorAll('[data-branch-index]')) slider.addEventListener('input', () => {
+  const i = Number(slider.dataset.branchIndex), value = Math.round(Number(slider.value)*10);
+  const others = [0,1,2].filter(k => k !== i), remaining = 1000-value;
+  const total = branchWeights[others[0]]+branchWeights[others[1]];
+  const first = Math.round(total ? remaining*branchWeights[others[0]]/total : remaining/2);
+  branchWeights[i] = value; branchWeights[others[0]] = first; branchWeights[others[1]] = remaining-first;
+  scheduleUpdate();
+});
+const branchPresets = { zero:[1000,0,0], one:[0,1000,0], leak:[0,0,1000], mixed:[250,500,250] };
+for (const button of document.querySelectorAll('[data-branch-preset]')) button.addEventListener('click', () => {
+  branchWeights = [...branchPresets[button.dataset.branchPreset]]; update();
+});
 let scheduled = false;
 function scheduleUpdate() { if (!scheduled) { scheduled = true; requestAnimationFrame(() => { scheduled = false; update(); }); } }
 function setPreset(name) {
@@ -129,5 +165,5 @@ for (const button of document.querySelectorAll('[data-noise-preset]')) button.ad
   $('#noise-scan').value = ({ dephase: 'dephasing', blockade: 'blockadeRatio', decay: 'decay', detuning: 'detuning' })[preset] || 'epsilon';
   setPreset(preset);
 });
-$('#noise-reset').addEventListener('click', () => { $('#noise-scan').value = 'epsilon'; setPreset('ideal'); });
+$('#noise-reset').addEventListener('click', () => { branchWeights = [0,1000,0]; $('#noise-scan').value = 'epsilon'; setPreset('ideal'); });
 update();
