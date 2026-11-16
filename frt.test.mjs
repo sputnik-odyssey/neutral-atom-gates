@@ -1,3 +1,4 @@
+import {PHASE_GATE,phaseUnitaryGrid} from './phase-gate.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {idealUnitary,trajectory,responseAt,connectedKernel,kernelIntegral,computeResponses,makeSpectrum,spectrumOverlap,trapezoid} from './frt.mjs';
@@ -53,15 +54,16 @@ test('time and frequency grids converge across supported gate speeds and narrow 
 });
 // Independent direct evolution of all four computational basis columns.
 // A sinusoid sqrt(2)*sigma*cos(2pi*f*t+phase) has variance sigma^2.
-function noisyGate(kind,sigma,phase,f=1.5,steps=192){
- const d=4,n=8,code=[0,1,3,4],rabi=3,du=Math.PI/steps;
+function noisyGate(kind,sigma,phase,f=1.5,steps=192,protocol='sequential'){
+ const d=4,n=8,code=[0,1,3,4],rabi=3,du=protocol==='phase'?PHASE_GATE.durationU/(4*steps):Math.PI/steps;
  let y=new Float64Array(2*n*d);code.forEach((i,j)=>y[2*(i*d+j)]=1);
  const derivative=(state,u,atom)=>{
   const out=new Float64Array(state.length),noise=Math.SQRT2*sigma*Math.cos(f*u/rabi+phase);
   const coupling=.5*(kind==='intensity'?1+noise/2:1);
-  const pairs=atom===0?[[3,6],[4,7]]:[[1,2],[4,5]];
+  const phi=protocol==='phase'?PHASE_GATE.A*Math.cos(PHASE_GATE.omegaOverOmega*u-PHASE_GATE.phi0):0,cphi=Math.cos(phi),sphi=Math.sin(phi);
+  const pairs=atom===2?[[3,6],[4,7],[1,2],[4,5]]:atom===0?[[3,6],[4,7]]:[[1,2],[4,5]];
   for(const [a,b] of pairs)for(let j=0;j<d;j++){
-   const x=2*(a*d+j),z=2*(b*d+j);out[x]+=coupling*state[z+1];out[x+1]-=coupling*state[z];out[z]+=coupling*state[x+1];out[z+1]-=coupling*state[x];
+   const x=2*(a*d+j),z=2*(b*d+j);out[x]+=coupling*(cphi*state[z+1]-sphi*state[z]);out[x+1]-=coupling*(cphi*state[z]+sphi*state[z+1]);out[z]+=coupling*(cphi*state[x+1]+sphi*state[x]);out[z+1]-=coupling*(cphi*state[x]-sphi*state[x+1]);
   }
   if(kind==='frequency')for(let i=0;i<n;i++){
    const nr=Number(Math.floor(i/3)===2)+Number(i%3===2),h=-noise*nr/rabi;
@@ -70,13 +72,13 @@ function noisyGate(kind,sigma,phase,f=1.5,steps=192){
   return out;
  };
  let u=0;
- for(const [atom,count] of [[0,steps],[1,2*steps],[0,steps]])for(let k=0;k<count;k++){
+ for(const [atom,count] of (protocol==='phase'?[[2,4*steps]]:[[0,steps],[1,2*steps],[0,steps]]))for(let k=0;k<count;k++){
   const a=derivative(y,u,atom),b=derivative(y.map((v,i)=>v+du*a[i]/2),u+du/2,atom),c=derivative(y.map((v,i)=>v+du*b[i]/2),u+du/2,atom),e=derivative(y.map((v,i)=>v+du*c[i]),u+du,atom);
   y=y.map((v,i)=>v+du*(a[i]+2*b[i]+2*c[i]+e[i])/6);u+=du;
  }
  // Input-Haar fidelity of overlap A=V_ideal^dagger V_noisy, with leakage retained.
  let square=0,traceR=0,traceI=0;
- code.forEach((i,a)=>{const sign=a===0?1:-1;for(let b=0;b<d;b++){const x=2*(i*d+b);square+=y[x]**2+y[x+1]**2;if(a===b){traceR+=sign*y[x];traceI+=sign*y[x+1];}}});
+ code.forEach((i,a)=>{const angle=protocol==='phase'?(a===0?0:a===3?2*2.098590091434572-Math.PI:2.098590091434572):a===0?0:Math.PI;const cr=Math.cos(angle),ci=-Math.sin(angle);for(let b=0;b<d;b++){const x=2*(i*d+b);square+=y[x]**2+y[x+1]**2;if(a===b){traceR+=cr*y[x]-ci*y[x+1];traceI+=cr*y[x+1]+ci*y[x];}}});
  return 1-(square+traceR**2+traceI**2)/(d*(d+1));
 }
 test('single-frequency random-phase full evolution validates PSD factors and intensity coupling',()=>{
@@ -84,5 +86,42 @@ test('single-frequency random-phase full evolution validates PSD factors and int
  for(const kind of ['frequency','intensity']){
   let average=0;for(let phase=0;phase<16;phase++)average+=noisyGate(kind,sigma,2*Math.PI*phase/16)/16;
   const predicted=sigma**2*responseAt(data,kind,3,1.5);relative(average,predicted,.001);
+ }
+});
+
+test('global phase-modulated gate is unitary, closes and has CZ conditional phase',()=>{
+ const grid=phaseUnitaryGrid(),u=grid.end;
+ for(const matrix of [grid.midpoints[100],u])for(let a=0;a<8;a++)for(let b=0;b<8;b++){
+  let re=0,im=0;for(let k=0;k<8;k++){const x=2*(k*8+a),y=2*(k*8+b);re+=matrix[x]*matrix[y]+matrix[x+1]*matrix[y+1];im+=matrix[x]*matrix[y+1]-matrix[x+1]*matrix[y];}close(re,+(a===b),1e-10);close(im,0,1e-10);
+ }
+ const r=computeResponses({protocol:'phase'});assert.ok(r.diagnostics.baselineInfidelity<1e-10);assert.ok(r.diagnostics.averageLeakage<1e-10);assert.ok(r.diagnostics.phaseError<1e-9);
+ close(r.duration,PHASE_GATE.durationU/(6*Math.PI));assert.ok(r.duration<.6667);
+});
+test('phase-gate Eq. (9) equals direct kernel summation for all input averages',()=>{
+ for(const ensemble of ['haar','symmetric','plus']){
+  const data=trajectory(ensemble,24,'phase'),duration=data.totalU/(6*Math.PI);
+  for(const kind of ['frequency','intensity'])for(const f of [0,1.5,7.2])close(responseAt(data,kind,3,f),kernelIntegral(connectedKernel(data,kind,3),data.count,f,duration,true,24).integral,1e-12);
+ }
+});
+test('phase-gate full noisy evolution independently validates both noise response operators',()=>{
+ const data=trajectory('haar',192,'phase'),sigma=.001;
+ for(const kind of ['frequency','intensity']){
+  let average=0;for(let phase=0;phase<16;phase++)average+=noisyGate(kind,sigma,2*Math.PI*phase/16,1.5,192,'phase')/16;
+  relative(average,sigma**2*responseAt(data,kind,3,1.5),.001);
+ }
+});
+test('identical PSDs reverse protocol ranking in different intensity-noise bands',()=>{
+ const seq=computeResponses(),phase=computeResponses({protocol:'phase'});
+ const epsilon=(r,center)=>spectrumOverlap(r.frequency,makeSpectrum(r.frequency,{rms:.01,center,width:.18}),r.intensity).infidelity;
+ assert.ok(epsilon(phase,0)<epsilon(seq,0));assert.ok(epsilon(phase,1.5)>epsilon(seq,1.5));
+ const data=trajectory('haar',192,'phase');relative(responseAt(data,'frequency',6,3),responseAt(data,'frequency',3,1.5)/4,1e-12);relative(responseAt(data,'intensity',6,3),responseAt(data,'intensity',3,1.5),1e-12);
+});
+test('phase-gate narrowband overlap converges at slow and fast gate speeds',()=>{
+ for(const rabi of [1,8]){
+  const a=computeResponses({rabi,protocol:'phase'}),b=computeResponses({rabi,protocol:'phase',stepsPerPi:384,points:801});
+  for(const key of ['nu','intensity'])for(const center of [0,1.5,9,12]){
+   const value=r=>spectrumOverlap(r.frequency,makeSpectrum(r.frequency,{rms:.02,center,width:.06}),r[key]).infidelity;
+   relative(value(a),value(b),.003);
+  }
  }
 });

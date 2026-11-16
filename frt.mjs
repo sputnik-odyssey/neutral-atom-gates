@@ -1,3 +1,4 @@
+import {PHASE_GATE,phaseAt,phaseUnitaryGrid,gateDiagnostics} from './phase-gate.mjs?v=protocol-1';
 /** Fidelity response theory for a sequential pi-2pi-pi CZ gate, ideal infinite blockade.
  * Eight states: 00,01,0r,10,11,1r,r0,r1 (rr projected out).
  * Physical time: microseconds; f and Omega/(2pi): MHz; one-sided PSD on [0,fmax].
@@ -41,7 +42,7 @@ function restrict(w,basis,d) {
   }
   return out;
 }
-function heisenbergColumns(u,atom,kind,basis,d) {
+function heisenbergColumns(u,atom,kind,basis,d,phase=0) {
   const evolved=new Float64Array(2*N*d),operated=new Float64Array(2*N*d),out=new Float64Array(2*N*d);
   for(let i=0;i<N;i++)for(let a=0;a<d;a++)for(let k=0;k<N;k++) {
     evolved[ix(i,a,d)]+=u[ix(i,k)]*basis[k*d+a];evolved[ix(i,a,d)+1]+=u[ix(i,k)+1]*basis[k*d+a];
@@ -51,9 +52,13 @@ function heisenbergColumns(u,atom,kind,basis,d) {
       const k=ix(i,a,d),factor=-2*Math.PI*countR(i);operated[k]=factor*evolved[k];operated[k+1]=factor*evolved[k+1];
     }
   } else {
-    // Dimensionless O_I/Omega = (|1><r|+h.c.)/4 for the addressed atom.
-    for(const [i,j] of pairs(atom))for(let a=0;a<d;a++)for(let z=0;z<2;z++) {
-      operated[ix(i,a,d)+z]=evolved[ix(j,a,d)+z]/4;operated[ix(j,a,d)+z]=evolved[ix(i,a,d)+z]/4;
+    // Dimensionless O_I/Omega, including the phase of both global drives.
+    const c=Math.cos(phase)/4,s=Math.sin(phase)/4;
+    const driven=atom===2?[...pairs(0),...pairs(1)]:pairs(atom);
+    for(const [i,j] of driven)for(let a=0;a<d;a++) {
+      const x=ix(i,a,d),y=ix(j,a,d),ar=evolved[x],ai=evolved[x+1],br=evolved[y],bi=evolved[y+1];
+      operated[x]+=c*br+s*bi;operated[x+1]+=c*bi-s*br;
+      operated[y]+=c*ar-s*ai;operated[y+1]+=c*ai+s*ar;
     }
   }
   for(let i=0;i<N;i++)for(let a=0;a<d;a++)for(let k=0;k<N;k++) {
@@ -62,15 +67,18 @@ function heisenbergColumns(u,atom,kind,basis,d) {
   }
   return out;
 }
-export function trajectory(ensemble='haar',stepsPerPi=192) {
+export function trajectory(ensemble='haar',stepsPerPi=192,protocol='sequential') {
   if(!Number.isInteger(stepsPerPi)||stepsPerPi<4)throw new RangeError('Invalid time grid');
-  const {basis,d}=basisFor(ensemble),count=4*stepsPerPi,du=TOTAL_U/count;
+  if(!['sequential','phase'].includes(protocol))throw new RangeError('Unknown gate protocol');
+  const totalU=protocol==='phase'?PHASE_GATE.durationU:TOTAL_U;
+  const {basis,d}=basisFor(ensemble),count=4*stepsPerPi,du=totalU/count;
+  const grid=protocol==='phase'?phaseUnitaryGrid(count):null;
   const frequency=[],intensity=[],times=[];
   for(let k=0;k<count;k++) {
-    const time=(k+.5)*du,atom=k<stepsPerPi||k>=3*stepsPerPi?0:1,u=idealUnitary(time);
-    times.push(time);frequency.push(heisenbergColumns(u,atom,'frequency',basis,d));intensity.push(heisenbergColumns(u,atom,'intensity',basis,d));
+    const time=(k+.5)*du,atom=k<stepsPerPi||k>=3*stepsPerPi?0:1,u=grid?grid.midpoints[k]:idealUnitary(time);
+    times.push(time);frequency.push(heisenbergColumns(u,atom,'frequency',basis,d));intensity.push(heisenbergColumns(u,grid?2:atom,'intensity',basis,d,grid?phaseAt(time):0));
   }
-  return {basis,d,count,du,times,frequency,intensity,ensemble};
+  return {basis,d,count,du,times,frequency,intensity,ensemble,totalU,protocol,end:grid?grid.end:idealUnitary(TOTAL_U)};
 }
 export function responseAt(data,kind,rabi,frequency) {
   const {basis,d,du,count}=data;
@@ -91,7 +99,7 @@ export function connectedKernel(data,kind,rabi) {
   const traces=m.map(x=>{let t=0;for(let i=0;i<d;i++)t+=x[ix(i,i,d)];return t;});
   const kernel=new Float64Array(count*count);
   // K=T^2 Re <O_H(t)O_H(tau)>_c. Intensity operator carries one Omega factor.
-  const duration=2/rabi,scale=kind==='frequency'?duration**2:TOTAL_U**2;
+  const duration=data.totalU/(2*Math.PI*rabi),scale=kind==='frequency'?duration**2:data.totalU**2;
   for(let i=0;i<count;i++)for(let j=0;j<=i;j++) {
     let dot=0,restricted=0;
     for(let a=0;a<w[i].length;a++)dot+=w[i][a]*w[j][a];
@@ -101,13 +109,13 @@ export function connectedKernel(data,kind,rabi) {
   }
   return kernel;
 }
-export function computeResponses({rabi=3,ensemble='haar',points=401,maxFrequency=12,stepsPerPi=192}={}) {
+export function computeResponses({rabi=3,ensemble='haar',points=401,maxFrequency=12,stepsPerPi=192,protocol='sequential'}={}) {
   if(!(rabi>0)||!Number.isFinite(rabi)||points<2||!(maxFrequency>0))throw new RangeError('Invalid frequency grid');
-  const data=trajectory(ensemble,stepsPerPi),frequency=new Float64Array(points),nu=new Float64Array(points),intensity=new Float64Array(points);
+  const data=trajectory(ensemble,stepsPerPi,protocol),frequency=new Float64Array(points),nu=new Float64Array(points),intensity=new Float64Array(points);
   for(let k=0;k<points;k++) {
     const f=maxFrequency*k/(points-1);frequency[k]=f;nu[k]=responseAt(data,'frequency',rabi,f);intensity[k]=responseAt(data,'intensity',rabi,f);
   }
-  return {frequency,nu,intensity,rabi,ensemble,duration:2/rabi,timeCount:data.count,
+  return {frequency,nu,intensity,rabi,ensemble,protocol,duration:data.totalU/(2*Math.PI*rabi),timeCount:data.count,diagnostics:gateDiagnostics(data.end),
     nuKernel:connectedKernel(data,'frequency',rabi),intensityKernel:connectedKernel(data,'intensity',rabi)};
 }
 export function trapezoid(x,y) {
