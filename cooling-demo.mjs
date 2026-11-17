@@ -56,7 +56,7 @@ export function createCoolingDemo({ onChange = () => {} } = {}) {
     for (let x = 16; x < 660; x += 20) for (let y = 16; y < 390; y += 20) { ctx.fillStyle = '#213b3a'; ctx.fillRect(x, y, 2, 2); }
     for (let x = -150; x <= 150; x += 6) for (let y = -150; y <= 150; y += 6) { const r = Math.hypot(x, y); if (r <= 150) { ctx.fillStyle = r < A.aperture * scale ? '#2c5848' : '#193b3c'; ctx.fillRect(cx + x - 3, cy + y - 3, 6, 6); } }
     ctx.strokeStyle = '#4d8172'; ctx.setLineDash([4, 6]); ctx.beginPath(); ctx.arc(cx, cy, 150, 0, 2 * Math.PI); ctx.stroke(); ctx.setLineDash([]);
-    for (let x = -120; x <= 120; x += 40) for (let y = -120; y <= 120; y += 40) if (Math.hypot(x, y) < 145 && p.gradient) arrow(cx + x, cy + y, x / 10 * Math.sign(p.gradient), y / 10 * Math.sign(p.gradient), '#547e63', 1);
+    for (let x = -120; x <= 120; x += 40) for (let y = -120; y <= 120; y += 40) if (Math.hypot(x, y) < 145 && p.gradient) arrow(cx + x, cy + y, x / 10 * Math.sign(p.gradient), -y / 10 * Math.sign(p.gradient), '#547e63', 1);
     ctx.strokeStyle = '#63aeb5'; ctx.lineWidth = 7; ctx.globalAlpha = .45; ctx.beginPath(); ctx.moveTo(70, cy); ctx.lineTo(480, cy); ctx.moveTo(cx, 44); ctx.lineTo(cx, 352); ctx.stroke(); ctx.globalAlpha = 1;
     arrow(76, cy, 60, 0, '#74c2c4'); arrow(477, cy, -40, 0, '#74c2c4'); arrow(cx, 47, 0, 39, '#74c2c4'); arrow(cx, 350, 0, -39, '#74c2c4');
     ctx.font = '11px "PingFang SC",sans-serif'; ctx.fillStyle = '#8fb4a4'; ctx.fillText('−8 mm', cx - 171, cy + 175); ctx.fillText('+8 mm', cx + 130, cy + 175); ctx.fillText('x →', 479, cy + 5); ctx.fillText('y ↑', cx + 12, 49);

@@ -1,6 +1,6 @@
 import { PARAMETERS as P, createPopulation, advancePopulation, expectedAtoms, unrefilledAtoms } from './loading-model.mjs';
 import { EQUIPMENT, STAGES, PAPER, AOSENSE } from './loading-catalog.mjs';
-import { createCoolingDemo, createProductGuide } from './cooling-demo.mjs';
+import { createCoolingDemo, createProductGuide } from './cooling-demo.mjs?v=cooling-3';
 import { ASSUMPTIONS as COOLING, sampleTrajectory } from './cooling-model.mjs';
 
 const $ = id => document.getElementById(id);
