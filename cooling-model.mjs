@@ -47,29 +47,32 @@ export function simulateSlower(input = {}, { steps = 1400, trace = true } = {}) 
   const velocity = Math.sqrt(w), reached = !stopped;
   return { points, velocity, duration: t, z, reached, stopped, accepted: reached && velocity >= ASSUMPTIONS.minAxial && velocity <= ASSUMPTIONS.maxAxial, photons: (p.initialVelocity - velocity) * ATOM.mass * ATOM.wavelength / ATOM.h };
 }
-export function motAcceleration(state, input = {}) {
+export function motAcceleration(state, input = {}, detuningOffsetHz = 0) {
   const p = parameters(input), [x, y, vx, vy] = state;
   // 1 G/cm = .01 T/m. The polarizations are chosen for restoring forces at b>0.
   const b = p.gradient * .01, shiftX = vx / ATOM.wavelength + ATOM.muOverH * b * x, shiftY = vy / ATOM.wavelength + ATOM.muOverH * b * y;
-  const delta = p.motDetuning * 1e6, s = ASSUMPTIONS.motS * Math.exp(-2 * (x * x + y * y) / ASSUMPTIONS.motRadius ** 2);
+  const delta = p.motDetuning * 1e6 + detuningOffsetHz, s = ASSUMPTIONS.motS * Math.exp(-2 * (x * x + y * y) / ASSUMPTIONS.motRadius ** 2);
   const q = [delta - shiftX, delta + shiftX, delta - shiftY, delta + shiftY].map(d => s / (1 + (2 * d / ATOM.gamma) ** 2));
   const denominator = 1 + q.reduce((a, c) => a + c, 0), coefficient = MAX_ACCELERATION / denominator;
   return [coefficient * (q[0] - q[1]), coefficient * (q[2] - q[3])];
 }
-export function simulateMot(axialVelocity, input = {}, { dt = 2e-6, trace = true } = {}) {
+export function simulateMot(axialVelocity, input = {}, { dt = 2e-6, trace = true, frequencyOffset = () => 0, breakpoints = [] } = {}) {
   const p = parameters(input);
   if (!(axialVelocity > 0)) throw new RangeError('axial velocity must be positive');
   const duration = ASSUMPTIONS.motLength / axialVelocity, steps = Math.ceil(duration / dt), h = duration / steps;
   let state = [ASSUMPTIONS.x0, ASSUMPTIONS.y0, p.transverseVelocity * Math.cos(ASSUMPTIONS.velocityAngle), p.transverseVelocity * Math.sin(ASSUMPTIONS.velocityAngle)], t = 0, escaped = false;
   const points = [], save = () => points.push({ t, x: state[0], y: state[1], vx: state[2], vy: state[3] });
-  const derivative = a => { const force = motAcceleration(a, p); return [a[2], a[3], ...force]; };
+  const boundaries = breakpoints.filter(at => at > 0 && at < duration);
+  const times = [...Array.from({ length: steps + 1 }, (_, i) => i * h), ...boundaries].sort((a, b) => a - b).filter((at, i, all) => i === 0 || at - all[i - 1] > 1e-13);
+  const derivative = (a, at) => { const force = motAcceleration(a, p, frequencyOffset(at)); return [a[2], a[3], ...force]; };
   const add = (a, k, scale) => a.map((v, j) => v + k[j] * scale);
   if (trace) save();
-  for (let i = 0; i < steps; i++) {
-    const k1 = derivative(state), k2 = derivative(add(state, k1, h / 2)), k3 = derivative(add(state, k2, h / 2)), k4 = derivative(add(state, k3, h));
-    state = state.map((v, j) => v + h / 6 * (k1[j] + 2 * k2[j] + 2 * k3[j] + k4[j])); t = (i + 1) * h;
+  for (let i = 0; i < times.length - 1; i++) {
+    const step = times[i + 1] - times[i], end = times[i + 1], endSample = boundaries.some(at => Math.abs(end - at) < 1e-12) ? end - 1e-12 : end;
+    const k1 = derivative(state, t), k2 = derivative(add(state, k1, step / 2), t + step / 2), k3 = derivative(add(state, k2, step / 2), t + step / 2), k4 = derivative(add(state, k3, step), endSample);
+    state = state.map((v, j) => v + step / 6 * (k1[j] + 2 * k2[j] + 2 * k3[j] + k4[j])); t = end;
     escaped = Math.hypot(state[0], state[1]) > ASSUMPTIONS.motRadius;
-    if (trace && (i % 4 === 3 || i === steps - 1 || escaped)) save();
+    if (trace && (i % 4 === 3 || i === times.length - 2 || escaped)) save();
     if (escaped) break;
   }
   const radius = Math.hypot(state[0], state[1]), speed = Math.hypot(state[2], state[3]);

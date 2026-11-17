@@ -65,11 +65,11 @@ F_avg=(P_comp+4F_e)/5 使用包含泄漏的 Haar 平均恒等式；F_e 不再用
 ## 验证
 
 ```sh
-node --test noise.test.mjs branching.test.mjs frt.test.mjs game.test.mjs hardware.test.mjs loading.test.mjs cooling.test.mjs
+node --test noise.test.mjs branching.test.mjs frt.test.mjs game.test.mjs hardware.test.mjs loading.test.mjs cooling.test.mjs locking.test.mjs
 python3 reference_branching.py
 ```
 
-当前 73 项 Node 测试覆盖量子门、两款游戏、连续补充数量模型，以及塞曼减速和 2D MOT 的半经典轨迹。FRT 测试另核对理想门酉性、直接双重积分、16 个随机相位的单频噪声完整 RK4 演化、单位缩放、功率平方律、时间/频率网格收敛、全局门闭合与局域 Z 补偿后的 CZ 条件相位，以及相同谱下的协议排序反转。
+当前 88 项 Node 测试覆盖量子门、两款游戏、连续补充数量模型，以及塞曼减速和 2D MOT 的半经典轨迹。FRT 测试另核对理想门酉性、直接双重积分、16 个随机相位的单频噪声完整 RK4 演化、单位缩放、功率平方律、时间/频率网格收敛、全局门闭合与局域 Z 补偿后的 CZ 条件相位，以及相同谱下的协议排序反转。
 
 独立 Python 参考使用 NumPy，按 RK4 直接传播全部 16 个逻辑输入算符；网站本身不需要 Python。测试核对解析衰变、归一性、旧版闭合极限、逻辑改变、吸收态、通道平均、独立参考与步长收敛。
 
@@ -109,4 +109,12 @@ GitHub Pages：Settings → Pages → Deploy from a branch → main → / (root)
 
 `cooling-demo.mjs` 显示速度/场轮廓、失谐分解和横向像素轨迹；`cooling-worker.mjs` 在后台扫描 25×13 个等权初态，不把绿色比例当作热炉束的捕获率。`cooling-products.mjs` 保留用户提供的 17 个具体产品链接并按功能分组，明确 Rb/Cs 锁频模块和 780/852 nm 放大器等的适配边界，不拼接成已实装清单。
 
-`node --test cooling.test.mjs` 包含 13 项检验：Hz/角频率单位、解析设计、独立时间域参考、空间/时间步长收敛、恢复力/阻尼符号、入口/出口判定以及单格轨迹与扫描一致性。全站共 73 项 Node 测试。
+`node --test cooling.test.mjs` 包含 13 项检验：Hz/角频率单位、解析设计、独立时间域参考、空间/时间步长收敛、恢复力/阻尼符号、入口/出口判定以及单格轨迹与扫描一致性。全站共 88 项 Node 测试。
+
+## 激光锁频、失锁与动态捕获
+
+`loading.html?view=sr#laser-lock` 展示 AOSense ECDL 与 ILC/SILC 的功能关系。`locking-model.mjs` 使用色散形教学鉴频曲线、带延迟的频率等效 PI、有限行程和一阶执行器；SILC 模式包含外部参考闭环，ILC 模式只关闭此外部光频环路。真实 ILC 的内部电流/温度控制不被解释成关闭。设备型号与功能链接厂家资料，W=20 MHz、τa=0.8 ms、漂移、增益、延迟、行程和诊断阈值均为教学设定，非厂家固件或性能拟合。
+
+`locking-capture.mjs` 在同一激光频率时序中用时间域 RK4 传播原子，通过理想固定频移形成 ZS/MOT 支路。运动过程中的突跳按时间边界分段，不用入射时刻快照替代完整波形；MOT 复用 `cooling-model.mjs`，扩展了可选频率偏移回调与事件断点，原静态默认不变。`locking-worker.mjs` 计算 25 个等时间入射的相同初态。这不是速度分布、通量或捕获效率。
+
+`locking.test.mjs` 的 15 项检验涵盖反馈极性、延迟失稳、饱和防积分累积、缺失参考时的零误差信号、偏移参考下的相对锁定、事件传播、零扰动静态极限、控制与原子步长收敛及采样一致性。零误差信号不自动计为锁定；满足相对参考锁定判据也不自动计为原子捕获。

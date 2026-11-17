@@ -1,4 +1,4 @@
-import { ATOM, ASSUMPTIONS as A, DEFAULT_COOLING, magneticField, simulateCooling, sampleTrajectory, scatteringRate } from './cooling-model.mjs';
+import { ATOM, ASSUMPTIONS as A, DEFAULT_COOLING, magneticField, simulateCooling, sampleTrajectory, scatteringRate } from './cooling-model.mjs?v=locking-1';
 import { PRODUCT_GUIDE } from './cooling-products.mjs';
 
 const $ = id => document.getElementById(id);
@@ -110,7 +110,7 @@ export function createCoolingDemo({ onChange = () => {} } = {}) {
     stopReplay(); replayPhase = 0; renderControls(); result = simulateCooling(p); renderResults(); requestMap(); onChange(result, stage);
   }
   try {
-    worker = new Worker(new URL('./cooling-worker.mjs', import.meta.url), { type: 'module' });
+    worker = new Worker(new URL('./cooling-worker.mjs?v=locking-1', import.meta.url), { type: 'module' });
     worker.addEventListener('message', event => {
       if (event.data.id !== request) return;
       $('capture-map').setAttribute('aria-busy', 'false'); $('capture-map').classList.remove('pending');
