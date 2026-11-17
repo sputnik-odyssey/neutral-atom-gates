@@ -1,10 +1,13 @@
 import { PARAMETERS as P, createPopulation, advancePopulation, expectedAtoms, unrefilledAtoms } from './loading-model.mjs';
 import { EQUIPMENT, STAGES, PAPER, AOSENSE } from './loading-catalog.mjs';
+import { createCoolingDemo, createProductGuide } from './cooling-demo.mjs';
+import { ASSUMPTIONS as COOLING, sampleTrajectory } from './cooling-model.mjs';
 
 const $ = id => document.getElementById(id);
 const canvas = $('loading-scene'), ctx = canvas.getContext('2d');
 let view = 'rb', step = 0, progress = 0, playing = false, speed = 1, previous = null;
 let population = createPopulation(), history = [], selected = 'mot';
+let coolingResult = null, coolingDemo;
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const palette = { bg: '#142b2d', grid: '#1c3436', metal: '#69837b', edge: '#aec2ad', void: '#091d24', light: '#65c2c3', atom: '#f0bb76', text: '#d6e4cc', muted: '#809c8f', green: '#92bc7a', signal: '#c99954' };
 
@@ -122,9 +125,17 @@ function srScene(phase) {
   text('热原子 →', 95, 384, palette.atom, 11); text('横向冷却 / 净轴向通量', 686, 407, palette.muted, 11);
   text('接用户真空腔 →', 901, 352, palette.muted, 11);
   text('后续捕获、俘获与态制备未画出', 835, 381, palette.muted, 10);
+  if (coolingResult) {
+    const q = sampleTrajectory(coolingResult.slower.points, phase);
+    const x = Math.round(220 + 460 * q.z / COOLING.length);
+    ctx.strokeStyle = '#eff4d9'; ctx.lineWidth = 2; ctx.strokeRect(x - 7, 282, 15, 15);
+    text(`教学初态 v₀=${coolingResult.parameters.initialVelocity} m/s → 末速度 ${coolingResult.slower.velocity.toFixed(1)} m/s`, 35, 91, palette.text, 11);
+    text(coolingResult.captured ? '所选初态：满足教学接收窗口' : '所选初态：未满足教学接收窗口', 35, 113, coolingResult.captured ? palette.green : palette.atom, 11);
+    text('白框追踪：按下方模型计算；像素粒子流不代表实测通量', 264, 548, palette.muted, 10);
+  }
   line([[53, 433], [1024, 433]], '#486758', 1, [5, 6]);
   text('厂家集成单元 / 不是 ⁸⁷Rb 实验的供给源', 344, 531, palette.muted, 12);
-  text('束流粒子的速度、间距与数量均为可视化参数，不代表真实粒子轨迹或分布。', 270, 567, palette.muted, 10);
+  text('在下方调节失谐、磁场与初速度，可查看计算轨迹和捕获区域。', 300, 577, palette.muted, 10);
 }
 function renderScene() { grid(); view === 'rb' ? rbScene(progress) : srScene(progress); }
 function selectEquipment(id, focus = false) {
@@ -152,8 +163,10 @@ function setView(next) {
   setPlaying(false); view = next; step = 0; progress = 0;
   document.querySelectorAll('[data-view]').forEach(b => { const active = b.dataset.view === view; b.setAttribute('aria-selected', String(active)); b.tabIndex = active ? 0 : -1; });
   $('apparatus').setAttribute('aria-labelledby', `tab-${view}`);
-  $('view-caption').innerHTML = view === 'rb' ? `实验依据：Chiu 等，Nature（2025）<a href="${PAPER}" target="_blank" rel="noopener noreferrer">连续运行的 3,000 比特系统 ↗</a>。沿用已公开的设备制造商和型号；图中分区与外形是教学重绘。` : `产品依据：<a href="${AOSENSE}" target="_blank" rel="noopener noreferrer">AOSense Cold Atomic Beam System ↗</a>。本视图以真实的 Beam-RevD-Sr 为例，只展开冷束源的功能，不将它接入铷阵列。`;
+  $('view-caption').innerHTML = view === 'rb' ? `实验依据：Chiu 等，Nature（2025）<a href="${PAPER}" target="_blank" rel="noopener noreferrer">连续运行的 3,000 比特系统 ↗</a>。沿用已公开的设备制造商和型号；图中分区与外形是教学重绘。` : `产品依据：<a href="${AOSENSE}" target="_blank" rel="noopener noreferrer">AOSense Cold Atomic Beam System ↗</a>。本视图以真实的 Beam-RevD-Sr 为例，只展开冷束源的功能，不将它接入铷阵列。<a href="#sr-controls">调节冷却参数与初速度 ↓</a>`;
   $('population-section').hidden = view !== 'rb'; $('sr-boundary').hidden = view !== 'sr';
+  $('sr-controls').hidden = view !== 'sr';
+  if (view !== 'sr') coolingDemo?.pause();
   $('equipment-pins').replaceChildren(...EQUIPMENT.filter(e => e.view === view).map(e => {
     const pin = document.createElement('button'); pin.className = 'pin'; pin.dataset.equipment = e.id;
     pin.style.left = `${e.x}%`; pin.style.top = `${e.y}%`; pin.innerHTML = `${e.name}<span>${e.id === 'control' ? '数字 / 模拟控制 + AWG' : e.id === 'laser' ? '828 / 852 nm 光镊系统' : e.model}</span>`;
@@ -228,4 +241,13 @@ function frame(now) {
   }
   requestAnimationFrame(frame);
 }
-recordHistory(); renderPopulation(); setView('rb'); requestAnimationFrame(frame);
+recordHistory(); renderPopulation();
+coolingDemo = createCoolingDemo({ onChange: (result, activeStep) => {
+  coolingResult = result;
+  if (view === 'sr' && activeStep !== undefined) { setPlaying(false); step = activeStep; progress = 0; renderStep(); }
+  renderScene();
+} });
+createProductGuide();
+setView(new URLSearchParams(location.search).get('view') === 'sr' || location.hash === '#sr-controls' ? 'sr' : 'rb');
+if (location.hash === '#sr-controls') $('sr-controls').scrollIntoView({ behavior: 'instant', block: 'start' });
+requestAnimationFrame(frame);

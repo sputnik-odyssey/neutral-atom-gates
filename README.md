@@ -65,11 +65,11 @@ F_avg=(P_comp+4F_e)/5 使用包含泄漏的 Haar 平均恒等式；F_e 不再用
 ## 验证
 
 ```sh
-node --test noise.test.mjs branching.test.mjs frt.test.mjs game.test.mjs hardware.test.mjs
+node --test noise.test.mjs branching.test.mjs frt.test.mjs game.test.mjs hardware.test.mjs loading.test.mjs cooling.test.mjs
 python3 reference_branching.py
 ```
 
-当前 51 项 Node 测试包含两种门，以及游戏纯态操作、通关阈值与地图可达性。FRT 测试另核对理想门酉性、直接双重积分、16 个随机相位的单频噪声完整 RK4 演化、单位缩放、功率平方律、时间/频率网格收敛、全局门闭合与局域 Z 补偿后的 CZ 条件相位，以及相同谱下的协议排序反转。
+当前 73 项 Node 测试覆盖量子门、两款游戏、连续补充数量模型，以及塞曼减速和 2D MOT 的半经典轨迹。FRT 测试另核对理想门酉性、直接双重积分、16 个随机相位的单频噪声完整 RK4 演化、单位缩放、功率平方律、时间/频率网格收敛、全局门闭合与局域 Z 补偿后的 CZ 条件相位，以及相同谱下的协议排序反转。
 
 独立 Python 参考使用 NumPy，按 RK4 直接传播全部 16 个逻辑输入算符；网站本身不需要 Python。测试核对解析衰变、归一性、旧版闭合极限、逻辑改变、吸收态、通道平均、独立参考与步长收敛。
 
@@ -100,3 +100,13 @@ GitHub Pages：Settings → Pages → Deploy from a branch → main → / (root)
 `loading-model.mjs` 仅计算六组存储阵列的期望数量：每组 540 位，每周期 80 ms，指数寿命 60 s。模型假定新组满载，把储库简化为两批库存；关闭上游后库存用尽才停止补充，暂停搬运会立刻停止存储组更新。它不模拟量子态或相干性，也不是实际设备的运行程序。
 
 验证：`node --test loading.test.mjs`（9 项，涵盖数量、组更新、库存、断链和器件来源隔离）。
+
+## 塞曼减速与 2D MOT 的交互教学模型
+
+`loading.html?view=sr#sr-controls` 在 AOSense 视图内提供六个物理控件：减速光失谐、假想等效磁场轮廓倍率、轴向初速度，以及 MOT 失谐、磁场梯度和入口横向初速。`cooling-model.mjs` 以 Hz 记失谐、以 Γ=2πγ 记衰变率；单光束洛伦兹散射力驱动 z 空间的 v² RK4，四光束共享饱和的平均散射力驱动横向时间 RK4。匹配例通过构造等减速参考轮廓得到，非 Beam-RevD-Sr 的实测场图。
+
+判断条件包含真实到达出口、轴向接收窗口、有限横向作用时间、有效光区、孔径和末横向速度。停在减速器内部不计成功；2D MOT 不被解释为轴向静态俘获。纵向和横向分段，MOT 入口横向初态独立给定。轮廓、尺寸、饱和参数、初态和窗口均作为教学假设公开，与厂家设备结构和原子常数分开列出。忽略反冲扩散、暗态泄漏、多能级光抽运、碰撞和精确光学/磁体几何，不能预测绝对通量、效率或温度。
+
+`cooling-demo.mjs` 显示速度/场轮廓、失谐分解和横向像素轨迹；`cooling-worker.mjs` 在后台扫描 25×13 个等权初态，不把绿色比例当作热炉束的捕获率。`cooling-products.mjs` 保留用户提供的 17 个具体产品链接并按功能分组，明确 Rb/Cs 锁频模块和 780/852 nm 放大器等的适配边界，不拼接成已实装清单。
+
+`node --test cooling.test.mjs` 包含 13 项检验：Hz/角频率单位、解析设计、独立时间域参考、空间/时间步长收敛、恢复力/阻尼符号、入口/出口判定以及单格轨迹与扫描一致性。全站共 73 项 Node 测试。
