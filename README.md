@@ -92,3 +92,11 @@ GitHub Pages：Settings → Pages → Deploy from a branch → main → / (root)
 5. Zhang et al. (2012). https://arxiv.org/abs/1201.6370
 6. Nielsen (2002). https://arxiv.org/abs/quant-ph/0205035
 7. Tsai, Sun et al., Benchmarking and fidelity response theory of high-fidelity Rydberg entangling gates, arXiv:2407.20184v2. https://arxiv.org/abs/2407.20184
+
+## Continuous loading 像素流程动画
+
+`loading.html` 提供两个独立视图：Chiu 等 Nature 2025 的 87Rb 连续阵列补充协议，以及 AOSense Beam-RevD-Sr 冷束源的功能剖视。`loading-catalog.mjs` 记录真实器件、定制件与文献/厂家来源；两套原子体系不拼接。动画支持逐步、暂停、倍速与键盘操作，启动时不自动播放。
+
+`loading-model.mjs` 仅计算六组存储阵列的期望数量：每组 540 位，每周期 80 ms，指数寿命 60 s。模型假定新组满载，把储库简化为两批库存；关闭上游后库存用尽才停止补充，暂停搬运会立刻停止存储组更新。它不模拟量子态或相干性，也不是实际设备的运行程序。
+
+验证：`node --test loading.test.mjs`（9 项，涵盖数量、组更新、库存、断链和器件来源隔离）。
