@@ -4,6 +4,14 @@
 
 在线访问：https://sputnik-odyssey.github.io/neutral-atom-gates/
 
+## 像素游戏
+
+入口：https://sputnik-odyssey.github.io/neutral-atom-gates/game.html
+
+独立的像素实验室提供六个任务：初始化与编码、H–Z–H 干涉、以 H/CZ 编译贝尔态、校准四类 CZ 误差、固定总衰变率比较末态分支、按同一强度噪声谱选择 CZ 协议。支持地图点击自动寻路、WASD/方向键、E 操作和触屏方向键；关卡逐步解锁，完成记录只保存在本机 localStorage。音效默认关闭。
+
+`game-physics.mjs` 提供纯态门运算，第四/五关复用 `branching.mjs`，第六关使用 `frt-worker.mjs` 的两种响应。成绩不依赖随机测量频数；64 次采样只展示 Born 统计。游戏中的像素位置与四项维修数属于交互规则，不是实验资源估计。
+
 ## 教材章节与交互功能
 
 新增第 01 章连接编码、初始化、控制脉冲、量子门、编译、测量与经典处理；以 CNOT 逻辑异或和两自旋能量估计说明完整计算流程，区分经典模拟、量子计算和量子优势。
@@ -49,11 +57,11 @@ F_avg=(P_comp+4F_e)/5 使用包含泄漏的 Haar 平均恒等式；F_e 不再用
 ## 验证
 
 ```sh
-node --test noise.test.mjs branching.test.mjs frt.test.mjs
+node --test noise.test.mjs branching.test.mjs frt.test.mjs game.test.mjs
 python3 reference_branching.py
 ```
 
-当前 37 项 Node 测试包含两种门。FRT 测试另核对理想门酉性、直接双重积分、16 个随机相位的单频噪声完整 RK4 演化、单位缩放、功率平方律、时间/频率网格收敛、全局门闭合与局域 Z 补偿后的 CZ 条件相位，以及相同谱下的协议排序反转。
+当前 43 项 Node 测试包含两种门，以及游戏纯态操作、通关阈值与地图可达性。FRT 测试另核对理想门酉性、直接双重积分、16 个随机相位的单频噪声完整 RK4 演化、单位缩放、功率平方律、时间/频率网格收敛、全局门闭合与局域 Z 补偿后的 CZ 条件相位，以及相同谱下的协议排序反转。
 
 独立 Python 参考使用 NumPy，按 RK4 直接传播全部 16 个逻辑输入算符；网站本身不需要 Python。测试核对解析衰变、归一性、旧版闭合极限、逻辑改变、吸收态、通道平均、独立参考与步长收敛。
 
