@@ -4,6 +4,14 @@
 
 在线访问：https://sputnik-odyssey.github.io/neutral-atom-gates/
 
+## 硬件实验室值班
+
+入口：https://sputnik-odyssey.github.io/neutral-atom-gates/hardware.html
+
+第二款独立像素游戏发生在同一间硬件实验室。玩家领取触发线与功率计，连接时序与相机，调节高斯模式位移，检查抽气支路，设置离散反馈极性，采集泊松参考帧，最后排列装载/初始化/π 脉冲/成像时序。设备实时就绪状态与历史工单分别记录；修改曝光或光路后参考帧会失效。
+
+`hardware-model.mjs` 是独立的简化设备模型：高斯重叠 η=exp[−(x²+y²)/16]、指数抽气、与压力成正比的碰撞率、线性离散反馈、条件于原子存在的泊松计数、含失谐的两能级转移。最终有效成功率为原子存留率×转移概率×目标亮态的正确读出率。它不是完整硬件误差预算，数值阈值与抽气时间均为关卡参数。支持自动寻路、键盘、触屏、地图放大、独立本机存档和结局报告。
+
 ## 像素游戏
 
 入口：https://sputnik-odyssey.github.io/neutral-atom-gates/game.html
@@ -57,11 +65,11 @@ F_avg=(P_comp+4F_e)/5 使用包含泄漏的 Haar 平均恒等式；F_e 不再用
 ## 验证
 
 ```sh
-node --test noise.test.mjs branching.test.mjs frt.test.mjs game.test.mjs
+node --test noise.test.mjs branching.test.mjs frt.test.mjs game.test.mjs hardware.test.mjs
 python3 reference_branching.py
 ```
 
-当前 43 项 Node 测试包含两种门，以及游戏纯态操作、通关阈值与地图可达性。FRT 测试另核对理想门酉性、直接双重积分、16 个随机相位的单频噪声完整 RK4 演化、单位缩放、功率平方律、时间/频率网格收敛、全局门闭合与局域 Z 补偿后的 CZ 条件相位，以及相同谱下的协议排序反转。
+当前 51 项 Node 测试包含两种门，以及游戏纯态操作、通关阈值与地图可达性。FRT 测试另核对理想门酉性、直接双重积分、16 个随机相位的单频噪声完整 RK4 演化、单位缩放、功率平方律、时间/频率网格收敛、全局门闭合与局域 Z 补偿后的 CZ 条件相位，以及相同谱下的协议排序反转。
 
 独立 Python 参考使用 NumPy，按 RK4 直接传播全部 16 个逻辑输入算符；网站本身不需要 Python。测试核对解析衰变、归一性、旧版闭合极限、逻辑改变、吸收态、通道平均、独立参考与步长收敛。
 
